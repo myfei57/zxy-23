@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>SignFlow · 审计与变更</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; background: #f5f7fb; color: #222; }
+    h1 { font-size: 20px; }
+    .card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    label { display: inline-block; margin: 6px 10px 6px 0; }
+    input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; width: 360px; }
+    button { padding: 6px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 14px; }
+    th { background: #f1f5f9; }
+    .ok { color: #16a34a; }
+    .fail { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <h1>审计与变更留痕</h1>
+  <div class="card">
+    <label>合同 ID <input id="contract-id" placeholder="合同 ID"></label>
+    <button onclick="loadAudit()">查询</button>
+  </div>
+  <div class="card">
+    <h2>审计流水</h2>
+    <table>
+      <thead><tr><th>事件 ID</th><th>动作</th><th>结果</th><th>详情</th><th>时间</th></tr></thead>
+      <tbody id="audit-rows"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>变更记录</h2>
+    <table>
+      <thead><tr><th>记录 ID</th><th>动作</th><th>版本</th><th>上一版本</th><th>备注</th><th>时间</th></tr></thead>
+      <tbody id="change-rows"></tbody>
+    </table>
+  </div>
+  <script>
+    async function api(path) {
+      const resp = await fetch(path);
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.error || resp.statusText);
+      return body;
+    }
+    const params = new URLSearchParams(location.search);
+    if (params.get('contract')) document.getElementById('contract-id').value = params.get('contract');
+    async function loadAudit() {
+      const id = document.getElementById('contract-id').value;
+      const events = await api('/api/contracts/' + id + '/audit');
+      document.getElementById('audit-rows').innerHTML = events.map(e => `<tr>
+        <td>${e.id}</td><td>${e.action}</td>
+        <td class="${e.result === 'success' ? 'ok' : 'fail'}">${e.result}</td>
+        <td>${e.detail}</td><td>${e.at}</td>
+      </tr>`).join('');
+      const view = await api('/api/contracts/' + id + '/changes');
+      document.getElementById('change-rows').innerHTML = view.entries.map(c => `<tr>
+        <td>${c.id}</td><td>${c.action}</td><td>v${c.revision}</td><td>v${c.prev_revision}</td>
+        <td>${c.note}</td><td>${c.changed_at}</td>
+      </tr>`).join('');
+    }
+    if (params.get('contract')) loadAudit();
+  </script>
+</body>
+</html>

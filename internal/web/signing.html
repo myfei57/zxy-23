@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>SignFlow · 顺序签署</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; background: #f5f7fb; color: #222; }
+    h1 { font-size: 20px; }
+    .card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    label { display: inline-block; margin: 6px 10px 6px 0; }
+    input, select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { padding: 6px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 14px; }
+    th { background: #f1f5f9; }
+    .ok { color: #16a34a; }
+  </style>
+</head>
+<body>
+  <h1>顺序签署</h1>
+  <div class="card">
+    <label>合同 <input id="contract-id" size="40" placeholder="合同 ID"></label>
+    <button onclick="loadContract()">加载</button>
+    <span id="contract-title" class="muted"></span>
+    <span id="signing-progress" class="muted"></span>
+  </div>
+  <div class="card">
+    <h2>签署方顺序</h2>
+    <table>
+      <thead><tr><th>顺序</th><th>签署方</th><th>邮箱</th><th>状态</th><th>签章时间</th><th>证书指纹</th></tr></thead>
+      <tbody id="signer-rows"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>签署</h2>
+    <label>签署方 ID <input id="signer-id" placeholder="签署方 ID"></label>
+    <label>证书指纹 <input id="cert-fp" placeholder="SHA-256 指纹"></label>
+    <label>签章时间 <input id="sign-time" placeholder="2026-08-22T12:00:00Z"></label>
+    <button onclick="sign()">完成签署</button>
+  </div>
+  <div class="card">
+    <h2>邀请通知</h2>
+    <label>签署方 ID <input id="notify-signer" placeholder="签署方 ID"></label>
+    <label>邀请 ID <input id="invite-id" placeholder="邀请 ID"></label>
+    <button onclick="notify()">发送邀请</button>
+    <span id="cursor-line" class="muted"></span>
+  </div>
+  <div class="card">
+    <h2>签署台账与回执</h2>
+    <table>
+      <thead><tr><th>记录 ID</th><th>签署方</th><th>状态</th><th>时间</th></tr></thead>
+      <tbody id="record-rows"></tbody>
+    </table>
+  </div>
+  <script>
+    async function api(path, options) {
+      const resp = await fetch(path, options);
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.error || resp.statusText);
+      return body;
+    }
+    const params = new URLSearchParams(location.search);
+    if (params.get('contract')) document.getElementById('contract-id').value = params.get('contract');
+    async function loadContract() {
+      const id = document.getElementById('contract-id').value;
+      const contract = await api('/api/contracts/' + id);
+      document.getElementById('contract-title').textContent = ' · ' + contract.title + ' · ' + contract.status;
+      const summary = await api('/api/contracts/' + id + '/signing');
+      document.getElementById('signing-progress').textContent =
+        ' · 已签 ' + summary.signed + '/' + summary.total +
+        ' · 下一签署方: ' + (summary.next_signer ? summary.next_signer.party_name : '无');
+      const signers = await api('/api/contracts/' + id + '/signers');
+      document.getElementById('signer-rows').innerHTML = signers.map(s => `<tr>
+        <td>${s.order}</td><td>${s.party_name}</td><td>${s.email}</td>
+        <td class="${s.state === 'signed' ? 'ok' : ''}">${s.state}</td>
+        <td>${s.sign_time || ''}</td><td>${s.cert_fingerprint || ''}</td>
+      </tr>`).join('');
+      const records = await api('/api/contracts/' + id + '/records');
+      document.getElementById('record-rows').innerHTML = records.map(r => `<tr>
+        <td>${r.id}</td><td>${r.party_name}</td><td>${r.status}</td><td>${r.signed_at}</td>
+      </tr>`).join('');
+      const cursor = await api('/api/contracts/' + id + '/cursor');
+      document.getElementById('cursor-line').textContent =
+        ' · 通知进度: ' + (cursor.last_ack_id || '尚未发送');
+    }
+    async function sign() {
+      const id = document.getElementById('contract-id').value;
+      await api('/api/contracts/' + id + '/sign', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          signer_id: document.getElementById('signer-id').value,
+          cert_fingerprint: document.getElementById('cert-fp').value,
+          sign_time: document.getElementById('sign-time').value
+        })
+      });
+      alert('签署完成');
+      await loadContract();
+    }
+    async function notify() {
+      const id = document.getElementById('contract-id').value;
+      await api('/api/contracts/' + id + '/notify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          signer_id: document.getElementById('notify-signer').value,
+          invite_id: document.getElementById('invite-id').value
+        })
+      });
+      await loadContract();
+    }
+    if (params.get('contract')) loadContract();
+  </script>
+</body>
+</html>
