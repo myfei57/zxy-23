@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>SignFlow · 归档中心</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; background: #f5f7fb; color: #222; }
+    h1 { font-size: 20px; }
+    .card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    label { display: inline-block; margin: 6px 10px 6px 0; }
+    input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { padding: 6px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 14px; }
+    th { background: #f1f5f9; }
+    .warn { color: #d97706; }
+  </style>
+</head>
+<body>
+  <h1>归档中心</h1>
+  <div class="card">
+    <h2>归档</h2>
+    <label>合同 ID <input id="archive-id" size="40" placeholder="合同 ID"></label>
+    <label>批次号 <input id="batch-no" placeholder="BATCH-20260822-01"></label>
+    <button onclick="archive()">归档</button>
+    <button onclick="retry()">重跑归档</button>
+  </div>
+  <div class="card">
+    <h2>归档台账</h2>
+    <table>
+      <thead><tr><th>记录 ID</th><th>合同 ID</th><th>批次号</th><th>哈希</th><th>大小</th><th>时间</th></tr></thead>
+      <tbody id="archive-rows"></tbody>
+    </table>
+  </div>
+  <script>
+    async function api(path, options) {
+      const resp = await fetch(path, options);
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.error || resp.statusText);
+      return body;
+    }
+    async function loadRecords() {
+      const records = await api('/api/archive/records');
+      document.getElementById('archive-rows').innerHTML = records.map(r => `<tr>
+        <td>${r.id}</td><td>${r.contract_id}</td><td>${r.batch_no}</td>
+        <td class="warn">${r.content_hash.slice(0, 16)}…</td><td>${r.file_size}</td><td>${r.archived_at}</td>
+      </tr>`).join('');
+    }
+    async function archive() {
+      const id = document.getElementById('archive-id').value;
+      await api('/api/contracts/' + id + '/archive', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({batch_no: document.getElementById('batch-no').value})
+      });
+      alert('归档完成');
+      await loadRecords();
+    }
+    async function retry() {
+      const id = document.getElementById('archive-id').value;
+      const result = await api('/api/contracts/' + id + '/archive/retry', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({batch_no: document.getElementById('batch-no').value})
+      });
+      alert(result.skipped ? '已存在归档记录，跳过' : '归档重跑完成');
+      await loadRecords();
+    }
+    loadRecords();
+  </script>
+</body>
+</html>
