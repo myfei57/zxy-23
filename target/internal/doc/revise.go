@@ -34,10 +34,10 @@ func (s *Service) Revise(contractID string, newContent string, now string) (*mod
 	contract.Revision = nextRevision
 	contract.RevisedAt = now
 	contract.UpdatedAt = now
-	if err := s.writeContent(contractID, nextRevision, newContent, now); err != nil {
+	if err := s.persist(contract); err != nil {
 		return nil, err
 	}
-	if err := s.persist(contract); err != nil {
+	if err := s.writeContent(contractID, nextRevision, newContent, now); err != nil {
 		return nil, err
 	}
 	return contract, nil
