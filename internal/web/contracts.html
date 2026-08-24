@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>SignFlow · 合同台账</title>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; background: #f5f7fb; color: #222; }
+    h1 { font-size: 20px; }
+    .card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    label { display: inline-block; margin: 6px 10px 6px 0; }
+    input, select, textarea { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    button { padding: 6px 14px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; font-size: 14px; }
+    th { background: #f1f5f9; }
+    .muted { color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>SignFlow 合同台账</h1>
+  <div class="card">
+    <h2>命名空间</h2>
+    <label>名称 <input id="ns-name" placeholder="采购一组"></label>
+    <label>法人主体 <input id="ns-entity" placeholder="示例科技有限公司"></label>
+    <label>配额 <input id="ns-quota" type="number" value="100"></label>
+    <button onclick="createNamespace()">创建</button>
+    <select id="ns-select" onchange="loadContracts()"><option value="">加载中…</option></select>
+    <span id="dash-line" class="muted"></span>
+  </div>
+  <div class="card">
+    <h2>新建合同</h2>
+    <label>标题 <input id="c-title" placeholder="采购框架合同"></label>
+    <label>签署方（逗号分隔：名称,邮箱）<input id="c-signers" placeholder="甲方,a@x.com;乙方,b@x.com"></label>
+    <br>
+    <label>正文 <textarea id="c-content" rows="3" cols="70" placeholder="合同条款…"></textarea></label>
+    <br>
+    <button onclick="createContract()">创建合同</button>
+  </div>
+  <div class="card">
+    <h2>合同列表</h2>
+    <table>
+      <thead><tr><th>ID</th><th>标题</th><th>状态</th><th>版本</th><th>签署方</th><th>操作</th></tr></thead>
+      <tbody id="contract-rows"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>修订合同</h2>
+    <label>合同 ID <input id="r-id" placeholder="合同 ID"></label>
+    <label>新正文 <textarea id="r-content" rows="2" cols="60" placeholder="新条款…"></textarea></label>
+    <label>备注 <input id="r-note" placeholder="修订说明"></label>
+    <button onclick="reviseContract()">保存修订</button>
+  </div>
+  <script>
+    async function api(path, options) {
+      const resp = await fetch(path, options);
+      const body = await resp.json();
+      if (!resp.ok) throw new Error(body.error || resp.statusText);
+      return body;
+    }
+    async function loadNamespaces() {
+      const list = await api('/api/namespaces');
+      const select = document.getElementById('ns-select');
+      select.innerHTML = '<option value="">选择命名空间</option>' + list.map(n =>
+        `<option value="${n.id}">${n.name}</option>`).join('');
+    }
+    async function createNamespace() {
+      await api('/api/namespaces', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          name: document.getElementById('ns-name').value,
+          legal_entity: document.getElementById('ns-entity').value,
+          quota_limit: Number(document.getElementById('ns-quota').value)
+        })
+      });
+      await loadNamespaces();
+    }
+    async function loadContracts() {
+      const nsId = document.getElementById('ns-select').value;
+      if (!nsId) return;
+      const contracts = await api('/api/contracts?namespace_id=' + encodeURIComponent(nsId));
+      const dash = await api('/api/namespaces/' + nsId + '/dashboard');
+      document.getElementById('dash-line').textContent =
+        ' · 配额 ' + dash.quota.used + '/' + dash.quota.limit +
+        ' · 草稿 ' + dash.contracts.draft + ' 签署中 ' + dash.contracts.signing +
+        ' 生效 ' + dash.contracts.effective + ' 已归档 ' + dash.contracts.archived;
+      const rows = document.getElementById('contract-rows');
+      rows.innerHTML = contracts.map(c => `<tr>
+        <td>${c.id}</td><td>${c.title}</td><td>${c.status}</td><td>v${c.revision}</td>
+        <td>${(c.signers || []).map(s => s.party_name + ':' + s.state).join(', ')}</td>
+        <td><a href="/signing?contract=${c.id}">签署</a> <a href="/audit?contract=${c.id}">审计</a></td>
+      </tr>`).join('');
+    }
+    function parseSigners(text) {
+      return text.split(/[;,；]/).map(pair => {
+        const [partyName, email] = pair.split(',');
+        return {party_name: partyName.trim(), email: (email || '').trim()};
+      }).filter(s => s.party_name);
+    }
+    async function createContract() {
+      const nsId = document.getElementById('ns-select').value;
+      const contract = await api('/api/contracts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          namespace_id: nsId,
+          title: document.getElementById('c-title').value,
+          signers: parseSigners(document.getElementById('c-signers').value),
+          content: document.getElementById('c-content').value
+        })
+      });
+      alert('已创建合同 ' + contract.id);
+      await loadContracts();
+    }
+    async function reviseContract() {
+      const id = document.getElementById('r-id').value;
+      await api('/api/contracts/' + id + '/revise', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          content: document.getElementById('r-content').value,
+          note: document.getElementById('r-note').value
+        })
+      });
+      alert('修订已保存');
+      await loadContracts();
+    }
+    loadNamespaces();
+  </script>
+</body>
+</html>
