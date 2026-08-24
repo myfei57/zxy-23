@@ -5,9 +5,26 @@ import (
 	"signflow/internal/storage"
 )
 
-// saveRecord durably appends one signature record to the contract ledger.
+// saveRecord durably persists one signature record on the contract ledger.
+//
+// It is idempotent per signer: at most one record is kept for each signer, so
+// a receipt-timeout retry that re-enters Do never leaves duplicate evidence
+// rows and a recovery retry can backfill a record that an earlier attempt
+// never wrote. This is what makes the "signed implies complete ledger"
+// invariant repairable instead of merely avoidable.
 func (s *Service) saveRecord(record *model.SignatureRecord) error {
-	return s.fs.AppendJSON(s.cfg.SignatureRecordFile(record.ContractID), record)
+	records, err := s.Records(record.ContractID)
+	if err != nil {
+		return err
+	}
+	for i := range records {
+		if records[i].SignerID == record.SignerID {
+			records[i] = *record
+			return s.fs.WriteJSON(s.cfg.SignatureRecordFile(record.ContractID), records)
+		}
+	}
+	records = append(records, *record)
+	return s.fs.WriteJSON(s.cfg.SignatureRecordFile(record.ContractID), records)
 }
 
 // Records returns every durable signature record of a contract in append order.
