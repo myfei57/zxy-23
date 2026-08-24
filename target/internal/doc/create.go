@@ -29,13 +29,6 @@ func (s *Service) Create(input CreateInput) (*model.Contract, error) {
 	if err := validateCreate(input); err != nil {
 		return nil, err
 	}
-	// The quota gate must run before any durable file is written so an
-	// over-quota contract never consumes storage. Checking after the content
-	// and contract files are persisted leaves them occupying space when the
-	// namespace is already at its limit, so the check happens first.
-	if err := s.quota.Check(input.NamespaceID, 1); err != nil {
-		return nil, err
-	}
 	contractID := uuid.NewString()
 	contract := &model.Contract{
 		ID:          contractID,
@@ -51,7 +44,9 @@ func (s *Service) Create(input CreateInput) (*model.Contract, error) {
 		return nil, err
 	}
 	if err := s.persist(contract); err != nil {
-		_ = s.fs.Remove(s.cfg.ContentFile(contract.ID)...)
+		return nil, err
+	}
+	if err := s.quota.Check(input.NamespaceID, 1); err != nil {
 		return nil, err
 	}
 	if err := s.quota.Use(input.NamespaceID, 1, input.Now); err != nil {
