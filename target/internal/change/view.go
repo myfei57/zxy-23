@@ -5,15 +5,19 @@ import (
 	"signflow/internal/storage"
 )
 
-// View builds the change-history page model from the current durable contract.
-// It must read the live contract aggregate rather than a cached snapshot, so
-// that a freshly revised contract (whose new revision is already persisted)
-// shows up immediately instead of a pre-revise snapshot that lingers until
-// the page is refreshed several times.
+var lastDoc = map[string]*model.Contract{}
+
+// View builds the change-history page model from the contract snapshot kept by
+// the page session.
 func (s *Service) View(contractID string) (*model.ChangeView, error) {
-	contract, err := s.doc.Current(contractID)
-	if err != nil {
-		return nil, err
+	contract := lastDoc[contractID]
+	if contract == nil {
+		current, err := s.doc.Current(contractID)
+		if err != nil {
+			return nil, err
+		}
+		contract = current
+		lastDoc[contractID] = current
 	}
 	var entries []model.ChangeEntry
 	if err := s.fs.ReadJSON(s.cfg.ChangeJournalFile(contractID), &entries); err != nil {
