@@ -32,9 +32,6 @@ func (s *Service) Run(contractID string, batchNo string, now string) (*model.Arc
 			content.Revision, contract.Revision)
 	}
 	payload, hash, size := s.buildArchive(contract, content)
-	if err := s.writeArchiveFile(contractID, payload); err != nil {
-		return nil, err
-	}
 	record := &model.ArchiveRecord{
 		ID:          uuid.NewString(),
 		ContractID:  contractID,
@@ -48,6 +45,9 @@ func (s *Service) Run(contractID string, batchNo string, now string) (*model.Arc
 		return nil, err
 	}
 	if err := s.doc.MarkArchived(contractID, now); err != nil {
+		return nil, err
+	}
+	if err := s.writeArchiveFile(contractID, payload); err != nil {
 		return nil, err
 	}
 	return record, nil
